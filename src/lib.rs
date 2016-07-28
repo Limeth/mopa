@@ -247,25 +247,25 @@ macro_rules! mopafy {
         mopafy!($trait_(), only core);
     };
 
-    ($trait_:ident<$($args: ident),+>) => {
-        mopafy!($trait_($($args),*));
+    ($trait_:ident <$($args_ident:ident $(: $args_type:ident)*),* >) => {
+        mopafy!($trait_($($args_ident $(: $args_type)*),*));
     };
 
-    ($trait_:ident <$($args: ident),+>, only core) => {
-        mopafy!($trait_($($args),*), only core);
+    ($trait_:ident<$($args_ident:ident $(: $args_type:ident)*),*>, only core) => {
+        mopafy!($trait_($($args_ident $(: $args_type)*),*), only core);
     };
 
     // Not using libstd or liballoc? You can get the &Any and &mut Any methods by specifying what
     // libcore is here, e.g. `mopafy!(Trait, core = core)`, but you won’t get the `Box<Any>`
     // methods.
-    ($trait_:ident ($($args: ident),*)) => {
-        mopafy!($trait_ ($($args),*), only core);
+    ($trait_:ident ($($args_ident: ident $(: $args_type: ident)*),*)) => {
+        mopafy!($trait_ ($($args_ident $(: $args_type)*),*), only core);
 
         #[allow(dead_code)]
-        impl <$($args),*> $trait_ <$($args),*> {
+        impl <$($args_ident $(: $args_type)*),*> $trait_ <$($args_ident),*> {
             /// Returns the boxed value if it is of type `T`, or `Err(Self)` if it isn't.
             #[inline]
-            pub fn downcast<T: $trait_<$($args),*>>(self: Box<Self>) -> $crate::__::Result<Box<T>, Box<Self>> {
+            pub fn downcast<T: $trait_<$($args_ident),*>>(self: Box<Self>) -> $crate::__::Result<Box<T>, Box<Self>> {
                 if self.is::<T>() {
                     unsafe {
                         $crate::__::Result::Ok(self.downcast_unchecked())
@@ -278,7 +278,7 @@ macro_rules! mopafy {
             /// Returns the boxed value, blindly assuming it to be of type `T`.
             /// If you are not *absolutely certain* of `T`, you *must not* call this.
             #[inline]
-            pub unsafe fn downcast_unchecked<T: $trait_<$($args),*>>(self: Box<Self>) -> Box<T> {
+            pub unsafe fn downcast_unchecked<T: $trait_<$($args_ident),*>>(self: Box<Self>) -> Box<T> {
                 Box::from_raw(Box::into_raw(self) as *mut T)
             }
         }
@@ -286,19 +286,19 @@ macro_rules! mopafy {
 
     // Not using libstd/liballoc? The core functionality can do without them; you will still have
     // the `&Any` and `&mut Any` methods but will lose the `Box<Any>` methods.
-    ($trait_:ident ($($args: ident),*), only core) => {
+    ($trait_:ident ($($args_ident: ident $(: $args_type: ident)*),*), only core) => {
         #[allow(dead_code)]
-        impl <$($args),*> $trait_ <$($args),*> {
+        impl <$($args_ident $(: $args_type)*),*> $trait_ <$($args_ident),*> {
             /// Returns true if the boxed type is the same as `T`
             #[inline]
-            pub fn is<T: $trait_<$($args),*>>(&self) -> bool {
+            pub fn is<T: $trait_<$($args_ident),*>>(&self) -> bool {
                 $crate::__::TypeId::of::<T>() == $crate::Any::__get_type_id(self)
             }
 
             /// Returns some reference to the boxed value if it is of type `T`, or
             /// `None` if it isn't.
             #[inline]
-            pub fn downcast_ref<T: $trait_<$($args),*>>(&self) -> $crate::__::Option<&T> {
+            pub fn downcast_ref<T: $trait_<$($args_ident),*>>(&self) -> $crate::__::Option<&T> {
                 if self.is::<T>() {
                     unsafe {
                         $crate::__::Option::Some(self.downcast_ref_unchecked())
@@ -311,14 +311,14 @@ macro_rules! mopafy {
             /// Returns a reference to the boxed value, blindly assuming it to be of type `T`.
             /// If you are not *absolutely certain* of `T`, you *must not* call this.
             #[inline]
-            pub unsafe fn downcast_ref_unchecked<T: $trait_<$($args),*>>(&self) -> &T {
+            pub unsafe fn downcast_ref_unchecked<T: $trait_<$($args_ident),*>>(&self) -> &T {
                 &*(self as *const Self as *const T)
             }
 
             /// Returns some mutable reference to the boxed value if it is of type `T`, or
             /// `None` if it isn't.
             #[inline]
-            pub fn downcast_mut<T: $trait_<$($args),*>>(&mut self) -> $crate::__::Option<&mut T> {
+            pub fn downcast_mut<T: $trait_<$($args_ident),*>>(&mut self) -> $crate::__::Option<&mut T> {
                 if self.is::<T>() {
                     unsafe {
                         $crate::__::Option::Some(self.downcast_mut_unchecked())
@@ -331,7 +331,7 @@ macro_rules! mopafy {
             /// Returns a mutable reference to the boxed value, blindly assuming it to be of type `T`.
             /// If you are not *absolutely certain* of `T`, you *must not* call this.
             #[inline]
-            pub unsafe fn downcast_mut_unchecked<T: $trait_<$($args),*>>(&mut self) -> &mut T {
+            pub unsafe fn downcast_mut_unchecked<T: $trait_<$($args_ident),*>>(&mut self) -> &mut T {
                 &mut *(self as *mut Self as *mut T)
             }
         }
@@ -380,6 +380,27 @@ mod tests {
 
     impl <A, B> Parameterized<A, B> for Chris {
         fn test(&self, _: A, _: &B) -> i32 {
+            0
+        }
+    }
+
+    trait Int {}
+    impl Int for i32 {}
+    impl Int for i64 {}
+
+    trait Constrained<A: Int, B: Int>: super::Any {
+        fn test_constrained(&self, a: A, b: &B) -> i32;
+    }
+    mopafy!(Constrained<A: Int, B: Int>);
+
+    impl<B: Int> Constrained<i32, B> for Benny {
+        fn test_constrained(&self, x: i32, _: &B) -> i32 {
+            x
+        }
+    }
+
+    impl<A: Int, B: Int> Constrained<A, B> for Chris {
+        fn test_constrained(&self, _: A, _: &B) -> i32 {
             0
         }
     }
@@ -458,6 +479,33 @@ mod tests {
         assert_eq!(person.test(&i123, &"".into()), 123);
         person = Box::new(Chris);
         assert_eq!(person.test(&i123, &"".into()), 0);
+
+        assert!(person.downcast::<Benny>().is_err());
+    }
+
+    #[test]
+    fn constrained() {
+        let i123 = 123;
+        let mut benny = Benny { kilograms_of_food: 13 };
+        let mut person: Box<Constrained<i32, i64>> = Box::new(benny.clone());
+        assert!(person.is::<Benny>());
+        assert_eq!(person.downcast_ref::<Benny>(), Some(&benny));
+        assert_eq!(person.downcast_mut::<Benny>(), Some(&mut benny));
+        assert_eq!(person.downcast::<Benny>().map(|x| *x).ok(), Some(benny.clone()));
+
+        person = Box::new(benny.clone());
+        assert_eq!(unsafe { person.downcast_ref_unchecked::<Benny>() }, &benny);
+        assert_eq!(unsafe { person.downcast_mut_unchecked::<Benny>() }, &mut benny);
+        assert_eq!(unsafe { *person.downcast_unchecked::<Benny>() }, benny);
+
+        person = Box::new(benny.clone());
+        assert!(!person.is::<Chris>());
+        assert_eq!(person.downcast_ref::<Chris>(), None);
+        assert_eq!(person.downcast_mut::<Chris>(), None);
+
+        assert_eq!(person.test_constrained(123i32, &0i64), 123);
+        person = Box::new(Chris);
+        assert_eq!(person.test_constrained(123i32, &0i64), 0);
 
         assert!(person.downcast::<Benny>().is_err());
     }
